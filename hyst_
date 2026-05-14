@@ -1,0 +1,141 @@
+#!/bin/bash
+set -Eeo pipefail
+
+fallback_server="127.0.0.1:9999"
+fallback_config="/opt/hy2_server.yaml"
+
+if [[ -z "${server}" ]];
+then
+  server=${fallback_server}
+fi
+
+if [[ -z "${config}" ]];
+then
+  config=${fallback_config}
+fi
+
+# trafficStats.secret from your Hysteria2 server config. Must be provided via env.secret.
+if [[ -z "${secret}" ]];
+then
+    echo "env.secret is not set; please set it to the value of trafficStats.secret from your Hysteria2 config" >&2
+    exit 255
+fi
+
+# Space-separated list of usernames to exclude from the graph. Override via env.exclude_users.
+exclude_users="${exclude_users:-}"
+
+
+request=$(basename "$0" | sed 's/^hyst_//g')
+
+if [[ $1 == "suggest" ]];
+then
+  echo "user"
+  exit 0
+fi
+
+if ! command -v yq &> /dev/null
+then
+    echo "'yq' not found, please install it!"  >&2
+    exit 255
+fi
+
+if ! command -v jq &> /dev/null
+then
+    echo "'jq' not found, please install it!"  >&2
+    exit 255
+fi
+
+if ! command -v curl &> /dev/null
+then
+    echo "'curl' not found, please install it!"  >&2
+    exit 255
+fi
+
+first=0
+printTagConfig()
+{
+    echo "${1}_dl.min 0"
+    echo "${1}_dl.graph no"
+    echo "${1}_dl.label ${1}"
+    echo "${1}_dl.type DERIVE"
+    echo "${1}_dl.cdef ${1}_dl,8,*"
+    if [[ $first -eq 0 ]];
+    then
+      echo "${1}_dl.draw AREA"
+      true
+    else
+      echo "${1}_dl.draw STACK"
+    fi
+    echo "${1}_ul.label ${1}"
+    echo "${1}_ul.type DERIVE"
+    echo "${1}_ul.negative ${1}_dl"
+    echo "${1}_ul.min 0"
+    echo "${1}_ul.cdef ${1}_ul,8,*"
+    if [[ $first -eq 0 ]];
+    then
+      true
+      echo "${1}_ul.draw AREA"
+    else
+      echo "${1}_ul.draw STACK"
+    fi
+    first=1
+}
+
+getOrder()
+{
+  order=""
+  for tag in ${tags}
+  do
+    order="${order} ${tag}"
+  done
+}
+
+data=$(curl -s -H "Authorization: ${secret}" "http://${server}/traffic")
+
+if [[ ${request} == "user" ]]
+then
+  tags=$(yq -r ".auth.userpass | keys[]" "${config}")
+  for e in ${exclude_users}
+  do
+    tags=$(echo ${tags} | sed "s/${e}//g")
+  done
+fi
+
+if [[ $1 == "config" ]];
+then
+    getOrder
+    echo "graph_title Hysteria: Traffic per ${request}"
+    echo "graph_order ${order}"
+    echo "graph_args --base 1000"
+    echo "graph_vlabel bits in (-) / out (+) per ${graph_period}"
+    for tag in ${tags}
+    do
+      printTagConfig $tag
+    done
+    exit 0
+fi
+
+
+printTagTraffic()
+{
+  value=$(echo "${data}" | jq -r .\"${1}\".\"${2}\")
+  if [[ ${value} == "null" ]];
+  then
+    value="0"
+  fi
+  if [[ -z ${value} ]]
+  then
+    echo "0"
+  else
+    echo ${value}
+  fi
+}
+
+for tag in ${tags}
+do
+  printf "${tag}_dl.value "
+  printTagTraffic ${tag} rx
+  printf "${tag}_ul.value "
+  printTagTraffic ${tag} tx
+done
+

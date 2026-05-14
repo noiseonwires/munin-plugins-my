@@ -1,14 +1,8 @@
 #!/bin/bash
 set -Eeo pipefail
 
-fallback_cmd="/opt/xray/xray api statsquery"
-fallback_server="127.0.0.1:5001"
+fallback_server="127.0.0.1:5002"
 fallback_config="/opt/xray/config.json"
-
-if [[ -z "${cmd}" ]];
-then
-  cmd=${fallback_cmd}
-fi
 
 if [[ -z "${server}" ]];
 then
@@ -20,7 +14,21 @@ then
   config=${fallback_config}
 fi
 
+# Space-separated lists of tags to exclude from the corresponding graphs.
+# Override via env.exclude_users / env.exclude_inbounds / env.exclude_outbounds in munin config.
+exclude_users="${exclude_users:-}"
+exclude_inbounds="${exclude_inbounds:-api}"
+exclude_outbounds="${exclude_outbounds:-block dns}"
+
 request=$(basename "$0" | sed 's/^xray_//g')
+
+if [[ $1 == "suggest" ]];
+then
+  echo "user"
+  echo "inbound"
+  echo "outbound"
+  exit 0
+fi
 
 if ! command -v jq &> /dev/null
 then
@@ -31,6 +39,12 @@ fi
 if ! command -v md5sum &> /dev/null
 then
     echo "'md5sum' not found, please install it!"  >&2
+    exit 255
+fi
+
+if ! command -v curl &> /dev/null
+then
+    echo "'curl' not found, please install it!"  >&2
     exit 255
 fi
 
@@ -67,19 +81,37 @@ printTagConfig()
 if [[ ${request} == "user" ]]
 then
   tags=$(cat ${config} | jq -r "[.inbounds[] | .settings | .clients[]? | .email] | unique | .[]")
+  for e in ${exclude_users}
+  do
+    tags=$(echo ${tags} | sed "s/${e}//g")
+  done
 fi
+
+data=$(curl -s "http://${server}/debug/vars" | jq -r ".stats")
 
 if [[ ${request} == "inbound" ]]
 then
-  tags=$(cat /opt/xray/config.json | jq -r "[.inbounds[] | .tag] | unique | .[]")
+  tags=$(echo "${data}" | jq -r ".inbound | keys[]")
+  for e in ${exclude_inbounds}
+  do
+    tags=$(echo ${tags} | sed "s/${e}//g")
+  done
 fi
 
 if [[ ${request} == "outbound" ]]
 then
-  tags=$(cat /opt/xray/config.json | jq -r "[.outbounds[] | .tag] | unique | .[]")
-fi
+  tags=$(
+    {
+      echo "${data}" | jq -r '.outbound | keys[]'
+      jq -r '[.inbounds[]?.settings.clients[]?.reverse.tag // empty] | .[]' "${config}"
+    } | sort -u
+  )
 
-stats=$($cmd  -server=${server} -pattern "${request}")
+  for e in ${exclude_outbounds}
+  do
+    tags=$(echo "${tags}" | sed "s/${e}//g")
+  done
+fi
 
 getOrder()
 {
@@ -94,7 +126,7 @@ getOrder()
 if [[ $1 == "config" ]];
 then
     getOrder
-    echo "graph_title Traffic per ${request}"
+    echo "graph_title Xray: Traffic per ${request}"
     echo "graph_order ${order}"
     echo "graph_args --base 1000"
     echo "graph_vlabel bits in (-) / out (+) per ${graph_period}"
@@ -109,8 +141,11 @@ fi
 
 printTagTraffic()
 {
-  jsonName="${1}>>>${2}>>>traffic>>>${3}";
-  value=$(echo $stats | jq '.stat[] | select(.name == '\"${jsonName}\"') | .value')
+  value=$(echo "${data}" | jq -r ".\"${1}\".\"${2}\".\"${3}\"")
+  if [[ ${value} == "null" ]];
+  then
+    value="0"
+  fi
   if [[ -z ${value} ]]
   then
     echo "0"

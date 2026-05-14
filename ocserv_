@@ -1,13 +1,19 @@
 #!/bin/bash
 set -Eeo pipefail
 
-old_values_file="/var/run/munin_ocserv"
+old_values_file="${MUNIN_PLUGSTATE:-/var/run}/munin_ocserv"
 
 request=$(basename "$0" | sed 's/^ocserv_//g')
 
 if ! command -v jq &> /dev/null
 then
     echo "'jq' not found, please install it!"  >&2
+    exit 255
+fi
+
+if ! command -v occtl &> /dev/null
+then
+    echo "'occtl' not found, please install it!"  >&2
     exit 255
 fi
 

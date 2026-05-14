@@ -1,0 +1,121 @@
+#!/bin/bash
+set -Eeo pipefail
+
+fallback_server="127.0.0.1:5002"
+fallback_config="/opt/xray/config.json"
+
+if [[ -z "${server}" ]];
+then
+  server=${fallback_server}
+fi
+
+if [[ -z "${config}" ]];
+then
+  config=${fallback_config}
+fi
+
+
+request=$(basename "$0" | sed 's/^xray_observe_//g')
+
+if [[ $1 == "suggest" ]];
+then
+  echo "alive"
+  echo "delay"
+  exit 0
+fi
+
+if ! command -v jq &> /dev/null
+then
+    echo "'jq' not found, please install it!"  >&2
+    exit 255
+fi
+
+if ! command -v curl &> /dev/null
+then
+    echo "'curl' not found, please install it!"  >&2
+    exit 255
+fi
+
+
+printAliveConfig()
+{
+    echo "${1}.label ${1}"
+    echo "${1}.warning 0.5"
+}
+
+printPingConfig()
+{
+    echo "${1}.label ${1}"
+}
+
+data=$(curl -s "http://${server}/debug/vars" | jq -r ".observatory")
+
+tags=$(jq -r ".observatory.subjectSelector[]" "${config}")
+
+if [[ $1 == "config" ]];
+then
+   if [[ ${request} == "alive" ]];
+   then
+     echo "graph_title XRay: Status of observatory"
+      for tag in ${tags}
+      do
+        printAliveConfig  $tag
+      done
+      exit 0
+    fi
+   if [[ ${request} == "delay" ]];
+   then
+     echo "graph_title XRay: Delay of observatory"
+      for tag in ${tags}
+      do
+        printPingConfig $tag
+      done
+      exit 0
+    fi
+fi
+
+
+printData()
+{
+  value=$(echo "${data}" | jq -r .\"${2}\".\"${1}\")
+  if [[ ${request} == "alive" ]];
+  then
+    err=$(echo "${data}" | jq -r .\"${2}\".\"last_error_reason\")
+    if [[ ${err} != "null" ]];
+    then
+      echo "1"
+      return 0
+    fi
+  fi
+
+  if [[ ${value} == "null" ]];
+  then
+    value="U"
+  fi
+  if [[ ${value} == "true" ]];
+  then
+    value="0"
+  fi
+  if [[ ${value} == "false" ]];
+  then
+    value="1"
+  fi
+  if [[ -z ${value} ]]
+  then
+    echo "U"
+  else
+    ## not dangerous, we trust the content of the config file
+    if [ "${value}" -gt "3000" ]; then
+      echo "U"
+    else
+      eval valueClear=${value}
+      echo ${valueClear}
+    fi
+  fi
+}
+
+for tag in ${tags}
+do
+  printf "${tag}.value "
+  printData ${request} ${tag}
+done

@@ -4,6 +4,13 @@ logfile_fallback=/var/log/snowflake.log #if not declared as env.logfile
 
 request=$(basename "$0" | sed 's/^snowflake_//g')
 
+if [[ $1 == "suggest" ]];
+then
+  echo "sessions"
+  echo "traffic"
+  exit 0
+fi
+
 case $1 in
    config)
         if [[ ${request} == "sessions" ]];
@@ -45,7 +52,7 @@ fi
 
 if [ ! -f ${logfile} ];
 then
-  echo "Logifle ${logfile} doesn't exist (is it a correct path?)" >&2
+  echo "Logfile ${logfile} doesn't exist (is it a correct path?)" >&2
   exit 255
 fi
 
@@ -123,7 +130,7 @@ then
     down="${BASH_REMATCH[1]}K"
     down=$(numfmt --from=iec "${down}")  # convert kilobytes/megabytes into bytes
   else
-    echo "Cannot find or parse last statistics record in ${SNOWFLAKE_LOGFILE}" >&2
+    echo "Cannot find or parse last statistics record in ${logfile}" >&2
     down="U"
   fi
   printf "down.value "

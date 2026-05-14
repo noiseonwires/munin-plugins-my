@@ -1,8 +1,8 @@
 #!/bin/sh
-OCSERV_USERS=/etc/ocserv/ocpasswd
+OCSERV_USERS="${ocpasswd:-/etc/ocserv/ocpasswd}"
 
 get_users () {
-  USERS=$(cat ${OCSERV_USERS} | grep -v '#'  | awk '{split($0,a,":"); print a[1]}')
+  USERS=$(grep -v '^#' "${OCSERV_USERS}" | awk '{split($0,a,":"); print a[1]}')
 }
 
 get_active_users ()

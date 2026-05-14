@@ -5,7 +5,9 @@ fallback_host="localhost"
 fallback_port="7650"
 fallback_password="itoopie"
 
-status_cache_file="/tmp/munin_i2pd_cache"
+# Use Munin's per-plugin state directory when available (set by munin-node)
+# so we don't write to world-writable /tmp.
+status_cache_file="${MUNIN_PLUGSTATE:-/tmp}/munin_i2pd_cache"
 status_cache_expiration=1 # minutes
 
 
@@ -26,7 +28,13 @@ request=$(basename "$0" | sed 's/^i2pd_//g')
 
 if ! command -v jq &> /dev/null
 then
-    echo "'jq' not be found, please install it!"  >&2
+    echo "'jq' not found, please install it!"  >&2
+    exit 255
+fi
+
+if ! command -v curl &> /dev/null
+then
+    echo "'curl' not found, please install it!"  >&2
     exit 255
 fi
 
@@ -51,9 +59,10 @@ printStatusConfig()
 if [[ $1 == "suggest" ]];
 then
   echo "traffic"
-  echo "transports"
+  echo "routers"
   echo "successrate"
   echo "transits"
+  echo "status"
   exit 0
 fi
 
@@ -126,7 +135,7 @@ fi
 
 getToken()
 {
-  auth_reply=$(/usr/bin/curl -k -s --data-binary "{
+  auth_reply=$(curl -k -s --data-binary "{
             \"jsonrpc\":\"2.0\",
             \"id\":$(date +%s%N),
             \"method\":\"Authenticate\",
@@ -141,7 +150,7 @@ getToken()
 updateStatus()
 {
   getToken
-  router_info=$(/usr/bin/curl -s -k --data-binary "{
+  router_info=$(curl -s -k --data-binary "{
               \"jsonrpc\":\"2.0\",
               \"id\":$(date +%s%N),
               \"method\":\"RouterInfo\",

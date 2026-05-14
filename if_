@@ -3,6 +3,16 @@ set -Eeo pipefail
 
 iface=$(basename "$0" | sed 's/^if_//g')
 
+if [[ $1 == "suggest" ]];
+then
+  for i in /sys/class/net/*; do
+    name=$(basename "$i")
+    [[ "$name" == "lo" ]] && continue
+    echo "$name"
+  done
+  exit 0
+fi
+
 
 
 if [[ $1 == "config" ]];

@@ -1,8 +1,8 @@
 #!/bin/sh
-OCSERV_CONFIG=/etc/ocserv/ocserv.conf
+OCSERV_CONFIG="${config:-/etc/ocserv/ocserv.conf}"
 
 get_vhosts () {
-  VHOSTS=$(cat ${OCSERV_CONFIG} |  grep -v '#' | sed -nE 's/^\[vhost:(.*)\]$/\1/p')
+  VHOSTS=$(grep -v '^#' "${OCSERV_CONFIG}" | sed -nE 's/^\[vhost:(.*)\]$/\1/p')
 }
 
 get_active_sessions_vhosts ()
